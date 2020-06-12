@@ -17,33 +17,33 @@ generate_ERs = function(RNA, miRNA, interactions, singleErExp.thr, core.no){
   parallel::clusterExport(cl = cluster, varlist = c("interactions", "miRNA"), envir=environment())
   res = pbapply::pblapply(cl = cluster, X = 1:length(unique(interactions$target)), FUN = function(i){
     mr = unique(interactions$target)[i]
-    reg = interactions$miRNA[interactions$target == mr]
+    reg = interactions$miRNA[interactions$target %in% mr]
     a = miRNA[1,,drop = F]
     a = a[-1,,drop = F]
     for(j in 1:length(reg)){
       r = reg[j]
-      s = interactions$normalizedScores[interactions$target == mr & interactions$miRNA == r]
+      s = interactions$normalizedScores[interactions$target %in% mr & interactions$miRNA %in% r]
       a = rbind(a, miRNA[r,,drop = F]*s)
     }
-    sumScore = sum(interactions$normalizedScores[interactions$target == mr])
-    er = a/sumScore
+    sumScore = sum(interactions$normalizedScores[interactions$target %in% mr])
+    er = colSums(a)/sumScore
+    er = as.data.frame(er)
     return(er)
   })
   parallel::stopCluster(cluster)
   ERs = data.frame(name = unique(interactions$target))
   ERs$ER = res
   rownames(ERs) = unique(interactions$target)
-  
   cluster = parallel::makeCluster(core.no)
   parallel::clusterExport(cl = cluster, varlist = c("ERs", "RNA"), envir=environment())
   res = pbapply::pblapply(cl = cluster, X = 1:nrow(ERs), FUN = function(i){
     mr = rownames(ERs)[i]
     a = ERs$ER[i][[1]]
-    b = RNA[mr,]
-    samples = intersect(colnames(a[,colSums(a)!=0]), names(b[b != 0]))
+    b = RNA[mr,, drop = T]
+    samples = intersect(rownames(a[a$er!=0,,drop = F]), names(b[b != 0]))
     
-    if(length(samples) > 50){
-      a = log2(colSums(a[,samples, drop = F])+0.000001)
+    if(length(samples) >= 50){
+      a = log2(a[samples,]+0.000001)
       b = log2(RNA[mr,samples]+0.000001)
       corr = cor(a, b)
     }else{
@@ -53,7 +53,33 @@ generate_ERs = function(RNA, miRNA, interactions, singleErExp.thr, core.no){
   })
   parallel::stopCluster(cluster)
   ERs$singleErExp = unlist(res)
+  summary(ERs$singleErExp)
   ERs = ERs[ERs$singleErExp < singleErExp.thr,]
+  cluster = parallel::makeCluster(core.no)
+  parallel::clusterExport(cl = cluster, varlist = c("RNA", "ERs", "singleErExp.thr"), envir=environment())
+  res = pbapply::pblapply(cl = cluster, X = 1:nrow(ERs), FUN = function(i){
+    mr = rownames(ERs)[i]
+    a = ERs$ER[i][[1]]
+    b = RNA[mr,, drop = T]
+    samples = intersect(rownames(a[a$er!=0,,drop = F]), names(b[b != 0]))
+    if(length(samples) >= 50){
+      fix.samples = samples
+      bootstrapCor = sapply(1:1000, function(bootstrap_iter){
+        samples = sample(fix.samples, size = length(fix.samples), replace = T)
+        a = log2(a[samples,]+0.000001)
+        b = log2(RNA[mr,samples]+0.000001)
+        corr = cor(a, b)
+        return(corr)
+      })
+      return(sum(bootstrapCor >= singleErExp.thr)/1000)
+    }else{
+      return(0)
+    }
+  })
+  parallel::stopCluster(cluster)
+  ERs$singleErExp.bootP = unlist(res)
+  summary(ERs$singleErExp.bootP)
+  ERs = ERs[ERs$singleErExp.bootP < 0.01,]
   return(ERs)
 }
 generate_candidate_pairs = function(ERs){
@@ -68,8 +94,8 @@ eliminate_wrt_commonRegulator = function(pairs, interactions, core.no){
   common.miRs = pbapply::pblapply(cl = cluster, X = 1:nrow(pairs), FUN = function(i){
     RNA1 = pairs$RNAi[i]
     RNA2 = pairs$RNAj[i]
-    set1 = unique(interactions$miRNA[interactions$target == RNA1])
-    set2 = unique(interactions$miRNA[interactions$target == RNA2])
+    set1 = unique(interactions$miRNA[interactions$target %in% RNA1])
+    set2 = unique(interactions$miRNA[interactions$target %in% RNA2])
     overlap = length(intersect(set1, set2))
     return(overlap)
   })
@@ -85,8 +111,8 @@ eliminate_wrt_hypergeo = function(pairs, interactions, core.no){
     universe = length(unique(interactions$miRNA))
     RNA1 = pairs$RNAi[i]
     RNA2 = pairs$RNAj[i]
-    set1 = unique(interactions$miRNA[interactions$target == RNA1])
-    set2 = unique(interactions$miRNA[interactions$target == RNA2])
+    set1 = unique(interactions$miRNA[interactions$target %in% RNA1])
+    set2 = unique(interactions$miRNA[interactions$target %in% RNA2])
     overlap = length(intersect(set1, set2))
     score = phyper(overlap, length(set1), universe-length(set1), length(set2), lower.tail = FALSE)
     return(score)
@@ -104,99 +130,8 @@ eliminate_wrt_partialCor = function(RNA, cna, pairs, core.no){
     a = RNA[RNAi,]
     b = RNA[RNAj,]
     samples = intersect(names(a[a != 0]), names(b[b != 0]))
-    rna.df = log2(RNA[c(RNAi, RNAj),samples]+0.000001)
-    cna.df = rna.df[-(1:2),, drop = F]
-    if(RNAi %in% rownames(cna)){
-      b = cna[RNAi,]
-      if(length(names(b[b != 0]))>150){
-        samples = intersect(samples, names(b[b != 0]))
-        cna.df = rbind(cna.df[, samples], cna[RNAi,samples, drop = FALSE])
-        rna.df = rna.df[,samples, drop = F]
-      }
-    }
-    if(RNAj %in% rownames(cna)){
-      b = cna[RNAj,]
-      if(length(names(b[b != 0]))>150){
-        samples = intersect(samples, names(b[b != 0]))
-        cna.df = rbind(cna.df[, samples], cna[RNAj,samples, drop = FALSE])
-        rna.df = rna.df[,samples, drop = F]
-      }
-    }
-    if(nrow(cna.df) == 0){
-      df = as.data.frame(scale(cbind(t(rna.df))))
-      pcor = cor(df[,1], df[,2])
-    }else{
-      df = as.data.frame(scale(cbind(t(rna.df), t(cna.df))))
-      colnames(df)[1] = paste(colnames(df)[1], "_ge", sep = "")  
-      colnames(df)[2] = paste(colnames(df)[2], "_ge", sep = "")  
-      ci.test.result = bnlearn::ci.test(x = colnames(df)[1], y = colnames(df)[2], z = colnames(df)[3:ncol(df)],
-                                        data = df, test = "cor")
-      pcor = ci.test.result$statistic 
-    }
-    return(pcor)
-  })
-  parallel::stopCluster(cluster)
-  return(unlist(res))
-}
-eliminate_wrt_partialCorP = function(RNA, cna, pairs, core.no){
-  cluster = parallel::makeCluster(core.no)
-  parallel::clusterExport(cl = cluster, varlist = c("pairs", "RNA", "cna"), envir=environment())
-  invisible(parallel::clusterEvalQ(cl = cluster,expr = library(bnlearn)))
-  res = pbapply::pblapply(cl = cluster, X = 1:nrow(pairs), FUN = function(i){
-    RNAi = pairs$RNAi[i]
-    RNAj = pairs$RNAj[i]
-    a = RNA[RNAi,]
-    b = RNA[RNAj,]
-    samples = intersect(names(a[a != 0]), names(b[b != 0]))
-    rna.df = log2(RNA[c(RNAi, RNAj),samples]+0.000001)
-    cna.df = rna.df[-(1:2),, drop = F]
-    if(RNAi %in% rownames(cna)){
-      b = cna[RNAi,]
-      if(length(names(b[b != 0]))>150){
-        samples = intersect(samples, names(b[b != 0]))
-        cna.df = rbind(cna.df[, samples], cna[RNAi,samples, drop = FALSE])
-        rna.df = rna.df[,samples, drop = F]
-      }
-    }
-    if(RNAj %in% rownames(cna)){
-      b = cna[RNAj,]
-      if(length(names(b[b != 0]))>150){
-        samples = intersect(samples, names(b[b != 0]))
-        cna.df = rbind(cna.df[, samples], cna[RNAj,samples, drop = FALSE])
-        rna.df = rna.df[,samples, drop = F]
-      }
-    }
-    if(nrow(cna.df) == 0){
-      df = as.data.frame(scale(cbind(t(rna.df))))
-      pcor = cor(df[,1], df[,2])
-      pvalue = cor.test(df[,1], df[,2])$p.value
-    }else{
-      df = as.data.frame(scale(cbind(t(rna.df), t(cna.df))))
-      colnames(df)[1] = paste(colnames(df)[1], "_ge", sep = "")  
-      colnames(df)[2] = paste(colnames(df)[2], "_ge", sep = "")  
-      ci.test.result = bnlearn::ci.test(x = colnames(df)[1], y = colnames(df)[2], z = colnames(df)[3:ncol(df)],
-                                        data = df, test = "cor")
-      pvalue = ci.test.result$p.value
-    }
-    return(pvalue)
-  })
-  parallel::stopCluster(cluster)
-  return(unlist(res))
-}
-eliminate_wrt_partialCor_bootstrapPvalue = function(RNA, cna, pairs, thr, core.no){
-  cluster = parallel::makeCluster(core.no)
-  parallel::clusterExport(cl = cluster, varlist = c("pairs", "RNA", "cna", "thr"), envir=environment())
-  invisible(parallel::clusterEvalQ(cl = cluster,expr = library(bnlearn)))
-  res = pbapply::pblapply(cl = cluster, X = 1:nrow(pairs), FUN = function(i){
-    RNAi = pairs$RNAi[i]
-    RNAj = pairs$RNAj[i]
-    a = RNA[RNAi,]
-    b = RNA[RNAj,]
-    samples = intersect(names(a[a != 0]), names(b[b != 0]))
-    fix.samples = samples
-    
-    bootstrapPartialCor = sapply(1:1000, function(bootstrap_iter){
-      samples = sample(fix.samples, size = length(fix.samples), replace = T)
+    if(length(samples)>50){
+      
       rna.df = log2(RNA[c(RNAi, RNAj),samples]+0.000001)
       cna.df = rna.df[-(1:2),, drop = F]
       if(RNAi %in% rownames(cna)){
@@ -226,9 +161,116 @@ eliminate_wrt_partialCor_bootstrapPvalue = function(RNA, cna, pairs, thr, core.n
                                           data = df, test = "cor")
         pcor = ci.test.result$statistic 
       }
-      return(pcor)
-    })
-    return(sum(bootstrapPartialCor < thr)/1000)
+    }else{
+      pcor = 0
+    }
+    return(pcor)
+  })
+  parallel::stopCluster(cluster)
+  return(unlist(res))
+}
+eliminate_wrt_partialCorP = function(RNA, cna, pairs, core.no){
+  cluster = parallel::makeCluster(core.no)
+  parallel::clusterExport(cl = cluster, varlist = c("pairs", "RNA", "cna"), envir=environment())
+  invisible(parallel::clusterEvalQ(cl = cluster,expr = library(bnlearn)))
+  res = pbapply::pblapply(cl = cluster, X = 1:nrow(pairs), FUN = function(i){
+    RNAi = pairs$RNAi[i]
+    RNAj = pairs$RNAj[i]
+    a = RNA[RNAi,]
+    b = RNA[RNAj,]
+    samples = intersect(names(a[a != 0]), names(b[b != 0]))
+    if(length(samples)>50){
+      rna.df = log2(RNA[c(RNAi, RNAj),samples]+0.000001)
+      cna.df = rna.df[-(1:2),, drop = F]
+      if(RNAi %in% rownames(cna)){
+        b = cna[RNAi,]
+        if(length(names(b[b != 0]))>150){
+          samples = intersect(samples, names(b[b != 0]))
+          cna.df = rbind(cna.df[, samples], cna[RNAi,samples, drop = FALSE])
+          rna.df = rna.df[,samples, drop = F]
+        }
+      }
+      if(RNAj %in% rownames(cna)){
+        b = cna[RNAj,]
+        if(length(names(b[b != 0]))>150){
+          samples = intersect(samples, names(b[b != 0]))
+          cna.df = rbind(cna.df[, samples], cna[RNAj,samples, drop = FALSE])
+          rna.df = rna.df[,samples, drop = F]
+        }
+      }
+      if(nrow(cna.df) == 0){
+        df = as.data.frame(scale(cbind(t(rna.df))))
+        pcor = cor(df[,1], df[,2])
+        pvalue = cor.test(df[,1], df[,2])$p.value
+      }else{
+        df = as.data.frame(scale(cbind(t(rna.df), t(cna.df))))
+        colnames(df)[1] = paste(colnames(df)[1], "_ge", sep = "")  
+        colnames(df)[2] = paste(colnames(df)[2], "_ge", sep = "")  
+        ci.test.result = bnlearn::ci.test(x = colnames(df)[1], y = colnames(df)[2], z = colnames(df)[3:ncol(df)],
+                                          data = df, test = "cor")
+        pvalue = ci.test.result$p.value
+      }
+    }else{
+      pvalue = 1
+    }
+    return(pvalue)
+  })
+  parallel::stopCluster(cluster)
+  return(unlist(res))
+}
+eliminate_wrt_partialCor_bootstrapP = function(RNA, cna, pairs, core.no){
+  cluster = parallel::makeCluster(core.no)
+  parallel::clusterExport(cl = cluster, varlist = c("pairs", "RNA", "cna"), envir=environment())
+  invisible(parallel::clusterEvalQ(cl = cluster,expr = library(bnlearn)))
+  res = pbapply::pblapply(cl = cluster, X = 1:nrow(pairs), FUN = function(i){
+    RNAi = pairs$RNAi[i]
+    RNAj = pairs$RNAj[i]
+    a = RNA[RNAi,]
+    b = RNA[RNAj,]
+    samples = intersect(names(a[a != 0]), names(b[b != 0]))
+    fix.samples = samples
+    
+    if(length(samples)>50){
+      bootstrapPartialCor = sapply(1:100, function(bootstrap_iter){
+        samples = sample(fix.samples, size = length(fix.samples), replace = T)
+        rna.df = log2(RNA[c(RNAi, RNAj),samples]+0.000001)
+        cna.df = rna.df[-(1:2),, drop = F]
+        if(RNAi %in% rownames(cna)){
+          b = cna[RNAi,]
+          if(length(names(b[b != 0]))>150){
+            samples = intersect(samples, names(b[b != 0]))
+            cna.df = rbind(cna.df[, samples], cna[RNAi,samples, drop = FALSE])
+            rna.df = rna.df[,samples, drop = F]
+          }
+        }
+        if(RNAj %in% rownames(cna)){
+          b = cna[RNAj,]
+          if(length(names(b[b != 0]))>150){
+            samples = intersect(samples, names(b[b != 0]))
+            cna.df = rbind(cna.df[, samples], cna[RNAj,samples, drop = FALSE])
+            rna.df = rna.df[,samples, drop = F]
+          }
+        }
+        if(nrow(cna.df) == 0){
+          df = as.data.frame(scale(cbind(t(rna.df))))
+          pcor = cor(df[,1], df[,2])
+        }else{
+          df = as.data.frame(scale(cbind(t(rna.df), t(cna.df))))
+          colnames(df)[1] = paste(colnames(df)[1], "_ge", sep = "")  
+          colnames(df)[2] = paste(colnames(df)[2], "_ge", sep = "")  
+          ci.test.result = bnlearn::ci.test(x = colnames(df)[1], y = colnames(df)[2], z = colnames(df)[3:ncol(df)],
+                                            data = df, test = "cor")
+          pcor = ci.test.result$statistic 
+        }
+        return(pcor)
+      })
+    }else{
+      bootstrapPartialCor = 0
+    }
+    pval = 0.05
+    n = floor(length(bootstrapPartialCor)*pval)+1
+    return(unname(sort(bootstrapPartialCor)[n]))
+    
   })
   parallel::stopCluster(cluster)
   return(unlist(res))
@@ -242,46 +284,54 @@ eliminate_wrt_collectiveRegulation = function(RNA, ERs, pairs, core.no){
     sum.of.exp = log2(RNA[RNAi,]+RNA[RNAj,]+0.000001)
     a = ERs[RNAi, "ER"][[1]]
     b = ERs[RNAj, "ER"][[1]]
-    samples = intersect(colnames(a), colnames(b))
-    sum.of.ER = log2(colSums(a[,samples, drop = F])+colSums(b[,samples, drop = F])+0.000001)
+    samples = intersect(rownames(a[a$er!=0,,drop = F]), rownames(b[b$er!=0,,drop = F]))
+    sum.of.ER = log2(a[samples,, drop = F]+b[samples,, drop = F]+0.000001)
     a = sum.of.exp
     b = sum.of.ER
-    samples = intersect(names(a[a != 0]), names(b[b != 0]))
-    cor = cor(sum.of.exp[samples], sum.of.ER[samples])
+    samples = intersect(names(a[a != 0]), rownames(b[b$er!=0,,drop = F]))
+    if(length(samples)>50){
+      cor = cor(sum.of.exp[samples], as.vector(sum.of.ER[samples,]))
+    }else{
+      cor = 1      
+    }
     return(cor)
   })
   parallel::stopCluster(cluster)
   return(unlist(res))
 }
-eliminate_wrt_collectiveRegulation_bootstrapPvalue = function(RNA, ERs, pairs, thr, core.no){
+eliminate_wrt_collectiveRegulation_bootstrapP = function(RNA, ERs, pairs, core.no){
   cluster = parallel::makeCluster(core.no)
-  parallel::clusterExport(cl = cluster, varlist = c("pairs", "RNA", "ERs", "thr"), envir=environment())
+  parallel::clusterExport(cl = cluster, varlist = c("pairs", "RNA", "ERs"), envir=environment())
   res = pbapply::pblapply(cl = cluster, X = 1:nrow(pairs), FUN = function(i){
     RNAi = pairs$RNAi[i]
     RNAj = pairs$RNAj[i]
     sum.of.exp = log2(RNA[RNAi,]+RNA[RNAj,]+0.000001)
     a = ERs[RNAi, "ER"][[1]]
     b = ERs[RNAj, "ER"][[1]]
-    samples = intersect(colnames(a), colnames(b))
-    sum.of.ER = log2(colSums(a[,samples, drop = F])+colSums(b[,samples, drop = F])+0.000001)
+    samples = intersect(rownames(a[a$er!=0,,drop = F]), rownames(b[b$er!=0,,drop = F]))
+    sum.of.ER = log2(a[samples,, drop = F]+b[samples,, drop = F]+0.000001)
     a = sum.of.exp
     b = sum.of.ER
-    samples = intersect(names(a[a != 0]), names(b[b != 0]))
-    fix.samples = samples
-    bootstrapCor = sapply(1:1000, function(bootstrap_iter){
-      samples = sample(fix.samples, size = length(fix.samples), replace = T)
-      cor = cor(sum.of.exp[samples], sum.of.ER[samples])
-      return(cor)
-    })
-    return(sum(bootstrapCor > thr)/1000)
+    samples = intersect(names(a[a != 0]), rownames(b[b$er!=0,,drop = F]))
+    if(length(samples)>50){
+      fix.samples = samples
+      bootstrapCor = sapply(1:100, function(bootstrap_iter){
+        samples = sample(fix.samples, size = length(fix.samples), replace = T)
+        cor = cor(sum.of.exp[samples], as.vector(sum.of.ER[samples,]))
+        return(cor)
+      })
+    }else{
+      bootstrapCor = 1
+    }
+    pval = 0.01
+    n = floor(length(bootstrapCor)*pval)+1
+    return(unname(sort(bootstrapCor, decreasing = T)[n]))
   })
   parallel::stopCluster(cluster)
   return(unlist(res))
 }
 generate_deconv_input = function(pairs, scores, needNormalization, deconv_in){
-  # get normalized scores
   pairs$score = scores
-  
   if(needNormalization){
     my.normalize <- function(x){(x-min(x))/(max(x)-min(x))}
     pairs$score = my.normalize(pairs$score)
@@ -289,7 +339,6 @@ generate_deconv_input = function(pairs, scores, needNormalization, deconv_in){
   png(paste("Boxplot_score.of.pairs.png", sep = ""), width = 3, height = 3, units = "in", res = 600, pointsize = 6)
   boxplot(pairs$score)
   dev.off()
-  
   df = pairs[, c("RNAi", "RNAj", "score")]
   x2 = df[,c(2,1,3)]
   colnames(x2) = colnames(x2)[c(2,1,3)]
@@ -297,20 +346,15 @@ generate_deconv_input = function(pairs, scores, needNormalization, deconv_in){
   df = tidyr::spread(x, RNAj, score, fill = 0,)
   rownames(df) = df$RNAi
   df = df[,-1]
-  # Generate deconvolved input
   R.matlab::writeMat(deconv_in, df = as.matrix(df))
   return(df)
 }
-eliminate_wrt_networkDeconvolution = function(pairs, deconv_out, df, thr = 0){
+eliminate_wrt_networkDeconvolutionWithPercentage = function(pairs, deconv_out, df, perc = .5){
   df_out = R.matlab::readMat(deconv_out)
   df_out = as.data.frame(df_out[[1]])
   rownames(df_out) = rownames(df)
   colnames(df_out) = colnames(df)
-  
   a = as.matrix(df_out)
-  # summary(a[a!=0])
-  # deciding for rating thresholds
-  
   z = which(a <= 0, arr.ind = T)
   df_new = as.matrix(df_out)
   rownames(df_new) = colnames(df_new) = colnames(df)
@@ -318,22 +362,7 @@ eliminate_wrt_networkDeconvolution = function(pairs, deconv_out, df, thr = 0){
   df_new = melt(df_new, na.rm = T)
   df_new = df_new[, c(2,1,3)]
   colnames(df_new) = c("RNAi", "RNAj", "ranking")
-  
-  # just keep interactions with ranking TOP thr 
-  if(thr == 0){
-    if(nrow(pairs) > 50000){
-      thr = 50000
-    }else if(nrow(pairs)>10000){
-      thr = round(nrow(pairs), digits = -4)
-      if(thr>= nrow(pairs))
-        thr = thr - 10000
-    }else{
-      thr = round(nrow(pairs), digits = -3)
-      if(thr>= nrow(pairs))
-        thr = thr - 1000
-    }
-  }
-  
+  thr = round(nrow(pairs)*perc)
   df_new2 = head(df_new[order(df_new$ranking, decreasing= T),], n = thr*2)
   remained.candidate.pairs = merge(pairs, df_new2)
   return(remained.candidate.pairs)
