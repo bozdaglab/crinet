@@ -336,9 +336,6 @@ generate_deconv_input = function(pairs, scores, needNormalization, deconv_in){
     my.normalize <- function(x){(x-min(x))/(max(x)-min(x))}
     pairs$score = my.normalize(pairs$score)
   }
-  png(paste("Boxplot_score.of.pairs.png", sep = ""), width = 3, height = 3, units = "in", res = 600, pointsize = 6)
-  boxplot(pairs$score)
-  dev.off()
   df = pairs[, c("RNAi", "RNAj", "score")]
   x2 = df[,c(2,1,3)]
   colnames(x2) = colnames(x2)[c(2,1,3)]
