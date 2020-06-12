@@ -1,15 +1,11 @@
-# Initialization
-{
-  # Set workingspace
-  workingSpace = getwd()
-  saveDir = "supplementary"
-}
+# Set workingspace
+workingSpace = getwd()
 
 # Load functions
 source("crinet.functions.R")
 # load all data or load sample data
-# load(paste(workingSpace, saveDir, paste("CRINET_data.rda", sep = ""), sep = "/")); load(paste(workingSpace, saveDir, paste("CRINET_interactions.rda", sep = ""), sep = "/"))
-load(paste(workingSpace, saveDir, paste("CRINET_sample.rda", sep = ""), sep = "/"))
+# load(paste(workingSpace, "CRINET_data.rda", sep = "/")); load(paste(workingSpace, "CRINET_interactions.rda", sep = "/"))
+load(paste(workingSpace, "CRINET_sample.rda", sep = "/"))
 
 # Specify the core no to use in parallel processing
 core.no = 10
