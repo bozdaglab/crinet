@@ -55,6 +55,7 @@ generate_ERs = function(RNA, miRNA, interactions, singleErExp.thr, core.no){
   ERs$singleErExp = unlist(res)
   summary(ERs$singleErExp)
   ERs = ERs[ERs$singleErExp < singleErExp.thr,]
+  
   cluster = parallel::makeCluster(core.no)
   parallel::clusterExport(cl = cluster, varlist = c("RNA", "ERs", "singleErExp.thr"), envir=environment())
   res = pbapply::pblapply(cl = cluster, X = 1:nrow(ERs), FUN = function(i){

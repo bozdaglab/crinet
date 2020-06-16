@@ -3,8 +3,8 @@ workingSpace = getwd()
 
 # Load functions
 source("crinet.functions.R")
-# load all data or load sample data
-# load(paste(workingSpace, "CRINET_data.rda", sep = "/")); load(paste(workingSpace, "CRINET_interactions.rda", sep = "/"))
+
+# load sample data
 load(paste(workingSpace, "CRINET_sample.rda", sep = "/"))
 
 # Specify the core no to use in parallel processing
@@ -74,5 +74,6 @@ candidate.pairs = candidate.pairs[candidate.pairs$sumErExp.bootstrapP < sumErExp
 df = generate_deconv_input(pairs = candidate.pairs, scores = candidate.pairs$ceRNA.part.cor, needNormalization = T, deconv_in = paste0("Deconv_input.mat"))
 
 # Run network deconvolution algorithm (ND.m) using Matlab 
+# [generated input is named as: "Deconv_input.mat". Output should be put into workingSpace named as "Deconv_output.mat"]
 # [Input for Matlab is generated and named as: "Deconv_input.mat". Output of Matlab should be put into workingSpace named as "Deconv_output.mat"]
 inferred.pairs = eliminate_wrt_networkDeconvolutionWithPercentage(pairs = candidate.pairs, deconv_out = paste0("Deconv_output.mat"), df = df, perc = .33)
