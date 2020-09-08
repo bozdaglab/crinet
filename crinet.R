@@ -70,7 +70,8 @@ candidate.pairs = candidate.pairs[candidate.pairs$sumErExp.bootstrapP < sumErExp
 # Network Deconvolution
 df = generate_deconv_input(pairs = candidate.pairs, scores = candidate.pairs$ceRNA.part.cor, needNormalization = T, deconv_in = paste0("Deconv_input.mat"))
 
-# Run network deconvolution algorithm (ND.m) using Matlab 
-# [generated input is named as: "Deconv_input.mat". Output should be put into workingSpace named as "Deconv_output.mat"]
-# [Input for Matlab is generated and named as: "Deconv_input.mat". Output of Matlab should be put into workingSpace named as "Deconv_output.mat"]
+# Run network deconvolution algorithm (ND.m) using Matlab [Input for Matlab is generated and named as: "Deconv_input.mat". This file will be used as input for Matlab]
+# [Output of Matlab should be put into workingSpace named as "Deconv_output.mat"]
+
+# Generated ceRNA interaction pairs
 inferred.pairs = eliminate_wrt_networkDeconvolutionWithPercentage(pairs = candidate.pairs, deconv_out = paste0("Deconv_output.mat"), df = df, perc = .33)
