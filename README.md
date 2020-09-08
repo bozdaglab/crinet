@@ -1,7 +1,7 @@
 # Crinet (CeRna Interaction NETwork)
 Crinet  A computational tool to infer genome-wide competing endogenous RNA (ceRNA) interactions and groups
 
-## Description of Files
+## Description of files
 ##### crinet.R
 Tool to run whole tool with default hyperparameters and sample dataset with 10 cores
 ##### CRINET_sample.rda
