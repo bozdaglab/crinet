@@ -10,7 +10,7 @@ Supplemental file including sample datasets used in tool
 Supplemental file including function declarations used by tool
 
 ## Modification to tool
-### Using own datasets
+##### Using own datasets
 Uncomment 5.line and load your own dataset 
-### Using different hyperparameters
+##### Using different hyperparameters
 Modify 11.line
