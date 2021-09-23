@@ -8,7 +8,9 @@ load("CRINET_sample.rda")
 core.no = 10
 
 # Select hyperparameters
-singleErExp.thr = -0.01; comMir.thr = 1; hgeo.thr = 0.01; ceRNApartcor.thr = 0.55; ceRNApartcorPvalue.thr = 0.01; sumErExp.thr = -0.01
+# singleErExp.thr = -0.01; comMir.thr = 1; hgeo.thr = 0.01; ceRNApartcor.thr = 0.55; ceRNApartcorPvalue.thr = 0.01; sumErExp.thr = -0.01
+# Hyperparameters for sample data
+singleErExp.thr = -0.01; comMir.thr = 1; hgeo.thr = 0.1; ceRNApartcor.thr = 0.1; ceRNApartcorPvalue.thr = 0.1; sumErExp.thr = 0.1
 
 # Generate Effective Regulation
 ERs = generate_ERs(RNA = RNA,
